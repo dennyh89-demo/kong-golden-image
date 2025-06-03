@@ -46,18 +46,18 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME || github.actor}}
         password: ${{ secrets.DOCKER_PASSWORD || secrets.GITHUB_TOKEN }}
         
-    # - name: Download Kong Gateway
-    #   run: |
-    #     KONG_VERSION="${{ inputs.kong_version }}"
-    #     KONG_MAJOR_MINOR_VERSION=$(echo "$KONG_VERSION" | cut -d. -f1-2 | tr -d '.')
-    #     KONG_PACKAGE_NAME="kong-enterprise-edition_${KONG_VERSION}_amd64.deb"
-    #     KONG_URL="https://packages.konghq.com/public/gateway-${KONG_MAJOR_MINOR_VERSION}/deb/debian/pool/bullseye/main/k/ko/kong-enterprise-edition_${KONG_VERSION}/${KONG_PACKAGE_NAME}"
+    - name: Download Kong Gateway
+      run: |
+        KONG_VERSION="${{ inputs.kong_version }}"
+        KONG_MAJOR_MINOR_VERSION=$(echo "$KONG_VERSION" | cut -d. -f1-2 | tr -d '.')
+        KONG_PACKAGE_NAME="kong-enterprise-edition_${KONG_VERSION}_amd64.deb"
+        KONG_URL="https://packages.konghq.com/public/gateway-${KONG_MAJOR_MINOR_VERSION}/deb/debian/pool/bullseye/main/k/ko/kong-enterprise-edition_${KONG_VERSION}/${KONG_PACKAGE_NAME}"
 
-    #     echo "Downloading Kong Gateway version: $KONG_VERSION (major version: $KONG_MAJOR_MINOR_VERSION)..."
-    #     echo "Fetching from URL: $KONG_URL"
+        echo "Downloading Kong Gateway version: $KONG_VERSION (major version: $KONG_MAJOR_MINOR_VERSION)..."
+        echo "Fetching from URL: $KONG_URL"
 
-    #     curl -s -o kong.deb "$KONG_URL"
-    #   working-directory: ${{ env.DOCKERFILE_DIR }}
+        curl -s -o kong.deb "$KONG_URL"
+      working-directory: ${{ env.DOCKERFILE_DIR }}
         
     # - name: Build image
     #   uses: docker/build-push-action@v5
