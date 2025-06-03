@@ -11,11 +11,27 @@ on:
       kong_version:
         description: 'Kong version to build'
         required: true
-        default: '3.10.0.1'
+        default: "3.10.0.2"
       docker_registry:
         description: 'Docker registry'
         type: string
         default: localhost:5000
+      org_patch_version:
+        description: 'Organization patch version'
+        type: string
+        default: "1"
+      environment:
+        description: 'Target environment (dev, staging, prod)'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: dev
+      continue_on_scan_failure:
+        description: 'Continue on Trivy scan failure'
+        default: true
+        type: boolean
 
 jobs:
   build:
@@ -23,10 +39,56 @@ jobs:
 
     env:
       DOCKERFILE_DIR: ${{ github.workspace }}/dockerfiles
+      KONG_VERSION: ${{ inputs.kong_version }}
+      ORG_PATCH_VERSION: ${{ inputs.org_patch_version }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      DOCKER_REGISTRY: ${{ inputs.docker_registry }}
+      VAULT_ADDR: http://localhost:8300
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Generate semantic tags
+      id: tags
+      run: |
+        # Base semantic version: {KONG_VERSION}-{ORG_PATCH}.{BUILD_NUMBER}
+        SEMANTIC_VERSION="${KONG_VERSION}-${ORG_PATCH_VERSION}.${BUILD_NUMBER}"
+        
+        # Extract major.minor version from Kong version (e.g., 3.10.0.2 -> 3.10)
+        KONG_MAJOR_MINOR=$(echo "$KONG_VERSION" | cut -d. -f1-2)
+        
+        # Generate all tags
+        TAGS=""
+        
+        # 1. Semantic versioning tag
+        TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${SEMANTIC_VERSION},"
+        
+        # 2. Kong version tag (without org patch/build)
+        TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${KONG_VERSION},"
+        
+        # 3. Major.Minor latest tag
+        TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${KONG_MAJOR_MINOR}-latest,"
+        
+        # 4. Latest tag (only for prod environment)
+        if [ "$ENVIRONMENT" = "prod" ]; then
+          TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:latest,"
+        fi
+        
+        # Remove trailing comma
+        TAGS=$(echo "$TAGS" | sed 's/,$//')
+        
+        echo "semantic_version=${SEMANTIC_VERSION}" >> $GITHUB_OUTPUT
+        echo "kong_major_minor=${KONG_MAJOR_MINOR}" >> $GITHUB_OUTPUT
+        echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+        
+        # Display tagging strategy
+        echo "🏷️ Tagging Strategy Applied:"
+        echo "Semantic Version: ${SEMANTIC_VERSION}"
+        echo "Kong Major.Minor: ${KONG_MAJOR_MINOR}"
+        echo "Generated Tags:"
+        echo "$TAGS" | tr ',' '\n' | sed 's/^/  - /'
       
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -38,6 +100,20 @@ jobs:
     - name: Setup Bats and bats libs
       id: setup-bats
       uses: bats-core/bats-action@3.0.0
+
+    - name: Import CA Certificate
+      id: import-secrets
+      uses: hashicorp/vault-action@v2
+      with:
+        url: ${{ env.VAULT_ADDR }}
+        token: ${{ secrets.VAULT_TOKEN }}
+        secrets: |
+          pki/cert/ca certificate | CA_CERT ;
+
+    - name: Save CA Certificate to file
+      run: |
+        echo "${{ steps.import-secrets.outputs.CA_CERT }}" > certificates/rootCA.crt
+      shell: bash
       
     - name: Login to registry
       uses: docker/login-action@v3
@@ -57,54 +133,111 @@ jobs:
         echo "Fetching from URL: $KONG_URL"
 
         curl -s -o kong.deb "$KONG_URL"
-      working-directory: ${{ env.DOCKERFILE_DIR }}
         
-    # - name: Build image
-    #   uses: docker/build-push-action@v5
+    - name: Build image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: dockerfiles/Dockerfile.debian
+        platforms: linux/amd64
+        push: false
+        load: true
+        tags: ${{ steps.tags.outputs.tags }}
+        build-args: |
+          KONG_VERSION=${{ inputs.kong_version }}
+          ORG_PATCH_VERSION=${{ inputs.org_patch_version }}
+          BUILD_NUMBER=${{ github.run_number }}
+          ENVIRONMENT=${{ inputs.environment }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # - name: Run Trivy vulnerability scanner
+    #   continue-on-error: ${{ inputs.continue_on_scan_failure }}
+    #   uses: aquasecurity/trivy-action@0.28.0
     #   with:
-    #     context: .
-    #     file: dockerfiles/Dockerfile.ubuntu
-    #     platforms: linux/amd64,linux/arm64
-    #     push: false
-    #     tags: |
-    #       ${{ inputs.docker_registry }}/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-    #       ${{ inputs.docker_registry }}/kong-gateway:latest
-    #     cache-from: type=gha
-    #     cache-to: type=gha,mode=max
-        
-    # - name: Run smoke tests
+    #     image-ref: ${{ inputs.docker_registry }}/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
+    #     format: 'table'
+    #     output: 'reports/trivy-report.txt'
+    #     exit-code: '1'
+    #     severity: 'CRITICAL,HIGH'
+
+    # - name: Output Trivy report
     #   run: |
-    #     docker run --rm -d --name kong-test \
-    #       your-org-registry.com/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-    #     sleep 30
-    #     chmod +x scripts/kong-smoke-tests.bats
-    #     ./scripts/kong-smoke-tests.bats
-    #     docker stop kong-test
+    #     cat reports/trivy-report.txt
+    #   if: always()
+
+    - name: Create docker network for smoke tests
+      run: |
+        docker network create kong-net-${{ github.run_id }}
+      continue-on-error: true
+
+    - name: Run docker container
+      run: |
+          docker run -d --name kong-gateway \
+          --network kong-net-${{ github.run_id }} \
+          -p 8000:8000 -p 8100:8100 -p 8443:8443 \
+          --env KONG_DATABASE=off \
+          --env KONG_PLUGINS=bundled \
+          --env KONG_STATUS_LISTEN=0.0.0.0:8100 \
+          --env KONG_DECLARATIVE_CONFIG=/kong.yaml \
+          --env KONG_NGINX_WORKER_PROCESSES=1 \
+          --health-cmd "kong health" \
+          --health-interval 10s \
+          --health-timeout 5s \
+          --health-retries 3 \
+          --volume $(pwd)/configs/kong.yaml:/kong.yaml \
+          ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }}
+
+    - name: Wait for Kong Gateway to start
+      run: |
+        timeout 60s sh -c 'until docker ps | grep kong-gateway | grep -q healthy; do echo "Waiting for Kong Gateway to be available..."; sleep 2; done'
+      shell: bash
         
-    # - name: Run security scan
-    #   uses: aquasecurity/trivy-action@master
-    #   with:
-    #     image-ref: your-org-registry.com/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-    #     format: 'sarif'
-    #     output: 'trivy-results.sarif'
+    - name: Run smoke tests
+      run: |
+        bats kong-smoke-tests.bats | tee ${{ github.workspace }}/reports/smoke_test_report.log
+      working-directory: ${{ github.workspace }}/scripts
+
+    - name: Run Load tests
+      uses: grafana/run-k6-action@v1
+      env:
+        K6_TEST_URL: http://localhost:8000
+      with:
+        path: |
+          tests/k6/load.js
+        flags: --vus 50 --duration 10s
+        working-directory: ${{ github.workspace }}
+
+    - name: Stop and remove Docker container and network
+      if: always()
+      run: |
+        docker stop kong-gateway
+        docker rm kong-gateway
+        docker network rm kong-net-${{ github.run_id }}
+
+    - name: Push Docker image
+      if: success()
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: dockerfiles/Dockerfile.debian
+        platforms: linux/amd64
+        push: true
+        tags: ${{ steps.tags.outputs.tags }}
+        build-args: |
+          KONG_VERSION=${{ inputs.kong_version }}
+          ORG_PATCH_VERSION=${{ inputs.org_patch_version }}
+          BUILD_NUMBER=${{ github.run_number }}
+          ENVIRONMENT=${{ inputs.environment }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Inspect
+      run: |
+        docker buildx imagetools inspect ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }}
         
-    # - name: Run load tests
-    #   run: |
-    #     docker run --rm -d --name kong-load-test \
-    #       -p 8000:8000 \
-    #       your-org-registry.com/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-    #     sleep 30
-    #     npx k6 run tests/load/k6/load.js
-    #     docker stop kong-load-test
-        
-    # - name: Push image
-    #   if: success()
-    #   uses: docker/build-push-action@v5
-    #   with:
-    #     context: .
-    #     file: dockerfiles/Dockerfile.ubuntu
-    #     platforms: linux/amd64,linux/arm64
-    #     push: true
-    #     tags: |
-    #       your-org-registry.com/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-    #       your-org-registry.com/kong-gateway:latest
+    - name: Upload Reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: reports
+        path: reports/*

@@ -1,0 +1,80 @@
+# 🏢 Use organization-approved base image
+FROM debian:bullseye-slim
+
+# 📋 Build arguments for dynamic labeling
+ARG KONG_VERSION="3.10.0.2"
+ARG ORG_PATCH_VERSION="1"
+ARG BUILD_NUMBER="1"
+ARG ENVIRONMENT="dev"
+
+# 🏷️ Comprehensive metadata using build args
+LABEL org.opencontainers.image.title="Kong Gateway Golden Image" \
+      org.opencontainers.image.version="${KONG_VERSION}-${ORG_PATCH_VERSION}.${BUILD_NUMBER}" \
+      org.opencontainers.image.vendor="Your Organization" \
+      org.opencontainers.image.description="Kong Gateway ${KONG_VERSION} for ${ENVIRONMENT} environment" \
+      org.opencontainers.image.source="https://github.com/kong/kong-golden-image" \
+      kong.version="${KONG_VERSION}" \
+      kong.org_patch="${ORG_PATCH_VERSION}" \
+      kong.build_number="${BUILD_NUMBER}" \
+      kong.environment="${ENVIRONMENT}" \
+      kong.semantic_version="${KONG_VERSION}-${ORG_PATCH_VERSION}.${BUILD_NUMBER}"
+
+# 📥 Copy Kong binary (downloaded separately)
+COPY kong.deb /tmp/kong.deb
+
+# Install Kong and dependencies
+# Install only the necessary dependencies, clean up, and minimize image size
+RUN set -eux; \
+    apt-get update; \
+    # Install dependencies first
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        unzip \
+        ; \
+    # Install Kong package with dependency resolution
+    apt-get install -y --no-install-recommends /tmp/kong.deb || \
+    (apt-get install -f -y && apt-get install -y --no-install-recommends /tmp/kong.deb); \
+    # Clean up
+    apt-get autoremove -y; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /tmp/kong.deb; \
+    # Set permissions and create symlinks
+    chown kong:0 /usr/local/bin/kong; \
+    chown -R kong:0 /usr/local/kong; \
+    ln -s /usr/local/openresty/luajit/bin/luajit /usr/local/bin/luajit; \
+    ln -s /usr/local/openresty/luajit/bin/luajit /usr/local/bin/lua; \
+    ln -s /usr/local/openresty/nginx/sbin/nginx /usr/local/bin/nginx; \
+    kong version
+
+
+# Copy custom configurations
+COPY configs/kong.conf /etc/kong/kong.conf
+COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
+
+# Include Custom CA certificate
+COPY certificates/rootCA.crt /etc/ssl/certs/rootCA.crt
+
+# Include custom plugins
+# COPY kong-plugin/kong/plugins/ /usr/local/share/lua/5.1/kong/plugins/
+
+# Set proper permissions
+RUN chmod +x /docker-entrypoint.sh
+
+# Switch to non-root user
+USER kong
+
+# Expose only necessary ports (adjust based on your use case)
+EXPOSE 8000 8443 8001 8444 8002 8445 8003 8446 8004 8447
+
+# Use a safe stop signal
+STOPSIGNAL SIGQUIT
+
+# Healthcheck for Kong
+HEALTHCHECK --interval=10s --timeout=10s --retries=3 CMD kong health
+
+# Set the entrypoint
+ENTRYPOINT ["/docker-entrypoint.sh"]
+
+# Default command
+CMD ["kong", "docker-start"]

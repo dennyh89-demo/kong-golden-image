@@ -199,8 +199,8 @@ kong-golden-image/
 ### 2. Base Dockerfile Example
 
 ```dockerfile
-# Use organization-approved base image
-FROM your-org-registry.com/ubuntu:24.04-hardened
+# Use organization-approved Debian base image
+FROM your-org-registry.com/debian:12-hardened
 
 # Metadata
 LABEL org.opencontainers.image.title="Kong Gateway Golden Image"
@@ -213,26 +213,26 @@ COPY kong-enterprise-edition_3.10.0.1_amd64.deb /tmp/kong.deb
 
 # Install Kong and dependencies
 RUN set -ex; \
-    apt-get update && \
-    apt-get install --yes /tmp/kong.deb && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm -rf /tmp/kong.deb && \
-    \
-    # Security hardening
-    rm -rf /usr/share/doc/* && \
-    rm -rf /usr/share/man/* && \
-    \
-    # Set proper ownership
-    chown kong:0 /usr/local/bin/kong && \
-    chown -R kong:0 /usr/local/kong && \
-    \
-    # Create symlinks
-    ln -s /usr/local/openresty/luajit/bin/luajit /usr/local/bin/luajit && \
-    ln -s /usr/local/openresty/luajit/bin/luajit /usr/local/bin/lua && \
-    ln -s /usr/local/openresty/nginx/sbin/nginx /usr/local/bin/nginx && \
-    \
-    # Verify installation
-    kong version
+  apt-get update && \
+  apt-get install --yes /tmp/kong.deb && \
+  rm -rf /var/lib/apt/lists/* && \
+  rm -rf /tmp/kong.deb && \
+  \
+  # Security hardening
+  rm -rf /usr/share/doc/* && \
+  rm -rf /usr/share/man/* && \
+  \
+  # Set proper ownership
+  chown kong:0 /usr/local/bin/kong && \
+  chown -R kong:0 /usr/local/kong && \
+  \
+  # Create symlinks
+  ln -s /usr/local/openresty/luajit/bin/luajit /usr/local/bin/luajit && \
+  ln -s /usr/local/openresty/luajit/bin/luajit /usr/local/bin/lua && \
+  ln -s /usr/local/openresty/nginx/sbin/nginx /usr/local/bin/nginx && \
+  \
+  # Verify installation
+  kong version
 
 # Copy custom configurations
 COPY configs/kong.conf.template /etc/kong/kong.conf.template
@@ -249,7 +249,7 @@ EXPOSE 8000 8443 8001 8444 8002 8445 8003 8446 8004 8447
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=10s --retries=10 \
-    CMD kong health
+  CMD kong health
 
 # Default command
 ENTRYPOINT ["/docker-entrypoint.sh"]
