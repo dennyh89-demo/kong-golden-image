@@ -1,5 +1,4 @@
 # Kong Gateway Golden Image Build Pipeline
-# =========================================================
 
 ## Overview
 
