@@ -160,20 +160,20 @@ jobs:
           BUILD_NUMBER=${{ github.run_number }}
           ENVIRONMENT=${{ inputs.environment }}
 
-    # - name: Run Trivy vulnerability scanner
-    #   continue-on-error: ${{ inputs.continue_on_scan_failure }}
-    #   uses: aquasecurity/trivy-action@0.28.0
-    #   with:
-    #     image-ref: ${{ inputs.docker_registry }}/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-    #     format: 'table'
-    #     output: 'reports/trivy-report.txt'
-    #     exit-code: '1'
-    #     severity: 'CRITICAL,HIGH'
+    - name: Run Trivy vulnerability scanner
+      continue-on-error: ${{ inputs.continue_on_scan_failure }}
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        image-ref: ${{ inputs.docker_registry }}/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
+        format: 'table'
+        output: 'reports/trivy-report.txt'
+        exit-code: '1'
+        severity: 'CRITICAL,HIGH'
 
-    # - name: Output Trivy report
-    #   run: |
-    #     cat reports/trivy-report.txt
-    #   if: always()
+    - name: Output Trivy report
+      run: |
+        cat reports/trivy-report.txt
+      if: always()
 
     - name: Create docker network for smoke tests
       run: |

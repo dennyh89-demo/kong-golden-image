@@ -45,13 +45,13 @@ style: |
 
 ## 🎯 Workshop Agenda
 
-- **🔍 Golden Images Overview** (20 min)
-- **🏗️ Kong Architecture & Versioning** (15 min)
-- **🐳 Container Best Practices** (25 min)
-- **⚙️ Pipeline Implementation** (30 min)
-- **🧪 Testing & Security** (20 min)
-- **🚀 Production Deployment** (15 min)
-- **❓ Q&A Session** (15 min)
+| Scenario                                                                 | Use Custom Image | Use Pre-built Image |
+|--------------------------------------------------------------------------|------------------|----------------------|
+| You need fine-grained control over your runtime                          | ✅               | ❌                   |
+| You want to get up and running quickly                                   | ❌               | ✅                   |
+| Your app requires special dependencies or configurations                 | ✅               | ❌                   |
+| You’re deploying in a production environment with strict security needs  | ✅               | ❌                   |
+| You’re just testing or prototyping                                       | ❌               | ✅                   |
 
 ---
 
