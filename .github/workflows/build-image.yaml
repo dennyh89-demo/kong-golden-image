@@ -64,21 +64,21 @@ jobs:
         # Extract major.minor version from Kong version (e.g., 3.10.0.2 -> 3.10)
         KONG_MAJOR_MINOR=$(echo "$KONG_VERSION" | cut -d. -f1-2)
         
-        # Generate all tags
+        # Generate environment-specific tags only
         TAGS=""
         
         # 1. Semantic versioning tag with environment suffix
         TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${SEMANTIC_VERSION_WITH_ENV},"
         
-        # 2. Kong version tag (without org patch/build)
-        TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${KONG_VERSION},"
+        # 2. Kong version with environment suffix
+        TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${KONG_VERSION}-${ENVIRONMENT},"
         
-        # 3. Major.Minor latest tag
-        TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${KONG_MAJOR_MINOR}-latest,"
+        # 3. Major.Minor latest with environment suffix
+        TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${KONG_MAJOR_MINOR}-latest-${ENVIRONMENT},"
         
-        # 4. Latest tag (only for prod environment)
+        # 4. Latest with environment suffix (only for prod environment)
         if [ "$ENVIRONMENT" = "prod" ]; then
-          TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:latest,"
+          TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:latest-${ENVIRONMENT},"
         fi
         
         # Remove trailing comma
