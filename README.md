@@ -1,670 +1,382 @@
-# Kong Gateway Golden Images Workshop
+# Kong Gateway Golden Image Build Pipeline
 
-## Building Production-Ready Container Images with Enterprise Governance
+[![Build Status](https://github.com/your-org/kong-golden-image/workflows/Build%20Kong%20Golden%20Image/badge.svg)](https://github.com/your-org/kong-golden-image/actions)
 
----
+## Overview
 
-## Agenda
+This repository contains the build pipeline for creating production-ready Kong Gateway golden images with environment-specific tagging. The pipeline builds secure, tested, and compliant container images that can be deployed across development, staging, and production environments.
 
-1. **What is a Golden Image?**
-2. **Why Build Custom Images vs. Using Pre-built Images?**
-3. **Kong's Release & Support Lifecycle**
-4. **Kong Binary Distribution via Cloudsmith**
-5. **Golden Image Pipeline Architecture**
-6. **Implementation: Step-by-Step Process**
-7. **Testing & Quality Assurance**
-8. **Best Practices & Governance**
-9. **Demo & Hands-On**
+## 🏗️ Build Process Architecture
 
----
+```mermaid
+graph TD
+    A[🚀 Workflow Trigger] --> B[📥 Checkout Code]
+    B --> C[🏷️ Generate Environment Tags]
+    C --> D[🔧 Setup Build Tools]
+    D --> E[🔐 Import Certificates]
+    E --> F[📦 Download Kong Binary]
+    F --> G[🏗️ Build Docker Image]
+    G --> H[🔍 Security Scanning]
+    H --> I[🐘 Start PostgreSQL]
+    I --> J[🔄 Kong Database Migration]
+    J --> K[🦍 Start Kong Gateway]
+    K --> L[⚙️ Configure with Deck]
+    L --> M[🧪 Run Smoke Tests]
+    M --> N[⚡ Run Load Tests]
+    N --> O[📤 Push to Registry]
+    O --> P[🔍 Image Inspection]
+    P --> Q[📊 Build Summary]
+    
+    style A fill:#e1f5fe
+    style C fill:#f3e5f5
+    style G fill:#e8f5e8
+    style M fill:#fff3e0
+    style N fill:#fff3e0
+    style O fill:#e3f2fd
+    style Q fill:#f1f8e9
+```
 
-## What is a Golden Image?
+## 🏷️ Environment-Specific Tagging Strategy
 
-### Definition
-A **Golden Image** is a standardized, approved, and tested container image that serves as the foundation for deploying applications across your organization.
+The pipeline generates **environment-aware tags only** to ensure clear separation between environments:
 
-### Key Characteristics
-- **Standardized**: Consistent base configuration across all environments
-- **Approved**: Validated by security, compliance, and engineering teams
-- **Tested**: Thoroughly validated through automated testing pipelines
-- **Versioned**: Proper semantic versioning and change tracking
-- **Immutable**: Once created, never modified (new versions are created instead)
+### Tag Format
+```
+{DOCKER_REGISTRY}/kong-gateway:{VERSION}-{ENVIRONMENT}
+```
 
-### Benefits
-- **Security**: Known, patched base images with vulnerability scanning
-- **Compliance**: Meets organizational security and regulatory requirements
-- **Consistency**: Identical runtime environments across dev, staging, and production
-- **Governance**: Centralized control over what runs in production
-- **Auditability**: Clear provenance and change history
+### Generated Tags by Environment
 
----
-
-## Why Build Custom Images vs. Pre-built Images?
-
-### The Challenge with Pre-built Images
-
-#### Kong's Official Docker Hub Images
-- Built on Kong's chosen base images (Debian, RHEL)
-- Fixed dependency versions
-- Limited customization options
-- May not meet enterprise security requirements
-- External dependency on Docker Hub availability
-
-#### Organizational Requirements
-- **Security Hardening**: Custom security configurations, removed packages
-- **Compliance**: SOC2, FIPS, PCI-DSS requirements
-- **Base Image Standards**: Organization-approved base images only
-- **Custom Dependencies**: Additional tools, certificates, monitoring agents
-- **Air-gapped Environments**: No external registry access
-
----
-
-## Kong's Release & Support Lifecycle
-
-### Version Support Policy
-
-#### Long-Term Support (LTS) Strategy
-- **4 minor versions per year** (March, June, September, December)
-- **1 LTS release annually** (March release becomes LTS)
-- **3 years of support** per LTS version
-- **2-year overlap** between adjacent LTS releases
-
-#### Version Format: `{MAJOR}.{MINOR}.{PATCH}.{ENTERPRISE_PATCH}`
-- **Major**: Rare, breaking changes
-- **Minor**: New features, released every ~12 weeks
-- **Patch**: Bug fixes and security updates
-- **Enterprise Patch**: Enterprise-specific fixes
-
-### Current LTS Schedule
-| LTS Version | Release Date | End of Support |
-|-------------|--------------|----------------|
-| 3.10        | March 2025   | March 2028     |
-| 3.14        | March 2026   | March 2029     |
-| 3.18        | March 2027   | March 2030     |
-
-### Why This Matters for Golden Images
-- **Predictable Upgrade Cycles**: Plan image updates around LTS releases
-- **Security Patches**: Regular patches require image rebuilds
-- **Support Overlap**: Maintain multiple image versions during transitions
-- **Governance**: Track which versions are approved for production use
-
----
-
-## Kong Binary Distribution via Cloudsmith
-
-### Cloudsmith Package Repository
-Kong distributes official binaries through **packages.konghq.com** (hosted by Cloudsmith)
-
-### Repository Structure
-- **Per Major.Minor Version**: `gateway-310`, `gateway-34`, etc.
-- **Multi-format Support**: DEB, RPM packages in single repository
-- **Multiple Architectures**: AMD64, ARM64 support
-- **Package Types**:
-  - `kong` (OSS Gateway)
-  - `kong-enterprise-edition` (Enterprise Gateway)
-
-### Downloading Kong Binaries
-
-#### Example: Kong Gateway 3.10 Enterprise
+#### Development Environment
 ```bash
-# Download DEB package
-curl -1sLf -O \
-  'https://packages.konghq.com/public/gateway-310/deb/ubuntu/pool/noble/main/k/kong-enterprise-edition/kong-enterprise-edition_3.10.0.1_amd64.deb'
-
-# Download RPM package
-curl -1sLf -O \
-  'https://packages.konghq.com/public/gateway-310/rpm/el/8/x86_64/kong-enterprise-edition-3.10.0.1-1.el8.x86_64.rpm'
+localhost:5000/kong-gateway:3.10.0.2-1.1-dev          # Semantic version with env
+localhost:5000/kong-gateway:3.10.0.2-dev              # Kong version with env  
+localhost:5000/kong-gateway:3.10-latest-dev           # Major.minor latest with env
 ```
 
-### Benefits of Using Official Binaries
-- **Authenticity**: Cryptographically signed packages
-- **Security**: Pre-built with known dependencies
-- **Support**: Backed by Kong's support team
-- **Reproducibility**: Consistent builds across environments
-
----
-
-## Golden Image Pipeline Architecture
-
-### High-Level Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Source Code   │    │  Build Pipeline │    │   Image Store   │
-│                 │───▶│                 │───▶│                 │
-│ • Dockerfile    │    │ • Build Image   │    │ • Container     │
-│ • Scripts       │    │ • Run Tests     │    │   Registry      │
-│ • Tests         │    │ • Security Scan │    │ • Vulnerability │
-│ • Config        │    │ • Publish       │    │   Reports       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+#### Staging Environment
+```bash
+localhost:5000/kong-gateway:3.10.0.2-1.1-staging      # Semantic version with env
+localhost:5000/kong-gateway:3.10.0.2-staging          # Kong version with env
+localhost:5000/kong-gateway:3.10-latest-staging       # Major.minor latest with env
 ```
 
-### Pipeline Stages
+#### Production Environment
+```bash
+localhost:5000/kong-gateway:3.10.0.2-1.1-prod        # Semantic version with env
+localhost:5000/kong-gateway:3.10.0.2-prod            # Kong version with env
+localhost:5000/kong-gateway:3.10-latest-prod         # Major.minor latest with env
+localhost:5000/kong-gateway:latest-prod              # Latest prod only
+```
 
-1. **Source Control Trigger**
-   - New commits to main branch
-   - New Kong version releases
-   - Scheduled security updates
+## 🚀 Quick Start
 
-2. **Build Stage**
-   - Download Kong binary from Cloudsmith
-   - Build custom Docker image
-   - Apply security hardening
+### Manual Workflow Execution
 
-3. **Test Stage**
-   - Smoke tests (basic functionality)
-   - Load tests (performance validation)
-   - Security scanning
+1. **Navigate to GitHub Actions** in your repository
+2. **Select "Build Kong Golden Image"** workflow
+3. **Click "Run workflow"** and configure:
 
-4. **Publish Stage**
-   - Tag with semantic version
-   - Push to private container registry
-   - Update image catalog
+| Parameter | Description | Default | Required |
+|-----------|-------------|---------|----------|
+| `kong_version` | Kong version to build | `3.10.0.2` | ✅ |
+| `docker_registry` | Target registry | `localhost:5000` | ✅ |
+| `org_patch_version` | Organization patch | `1` | ✅ |
+| `environment` | Target environment | `dev` | ✅ |
+| `continue_on_scan_failure` | Continue on scan failure | `true` | ❌ |
 
-5. **Notification Stage**
-   - Notify teams of new image availability
-   - Generate changelog
-   - Update documentation
+### Using the Built Image
 
----
+```bash
+# Pull the environment-specific image
+docker pull localhost:5000/kong-gateway:3.10.0.2-1.1-dev
 
-## Implementation: Step-by-Step Process
-
-### 1. Repository Structure
+# Run Kong Gateway
+docker run -d \
+  --name kong-gateway \
+  -p 8000:8000 \
+  -p 8001:8001 \
+  -e KONG_DATABASE=off \
+  -e KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml \
+  localhost:5000/kong-gateway:3.10.0.2-1.1-dev
+```
+## 📁 Repository Structure
 
 ```
 kong-golden-image/
 ├── .github/
 │   └── workflows/
-│       └── build-image.yaml
-├── dockerfiles/
-│   ├── Dockerfile.debian
-│   ├── Dockerfile.ubuntu
-│   └── Dockerfile.rhel
-├── scripts/
-│   ├── download-kong.sh
-│   ├── security-hardening.sh
-│   └── kong-smoke-tests.bats
-├── tests/
-│   ├── load/
-│   │   └── k6/
-│   │       └── load.js
-│   └── security/
+│       └── build-image.yaml          # Main build pipeline
+├── certificates/
+│   └── rootCA.crt                    # CA certificates
 ├── configs/
-│   ├── kong.conf.template
-│   └── nginx.conf.template
-└── README.md
+│   ├── kong.conf                     # Kong configuration
+│   └── kong.yaml                     # Deck configuration
+├── dockerfiles/
+│   └── Dockerfile.debian             # Debian-based Dockerfile
+├── scripts/
+│   ├── docker-entrypoint.sh          # Container entrypoint
+│   ├── kong-smoke-tests.bats         # Smoke test suite
+│   └── security-hardening.sh         # Security hardening
+├── tests/
+│   └── k6/
+│       └── load.js                   # Load testing script
+└── reports/                          # Generated test reports
 ```
 
-### 2. Base Dockerfile Example
+## 🔧 Build Pipeline Details
 
-```dockerfile
-# Use organization-approved Debian base image
-FROM your-org-registry.com/debian:12-hardened
+### Key Pipeline Features
 
-# Metadata
-LABEL org.opencontainers.image.title="Kong Gateway Golden Image"
-LABEL org.opencontainers.image.description="Production-ready Kong Gateway"
-LABEL org.opencontainers.image.version="3.10.0.1-1"
-LABEL org.opencontainers.image.vendor="Your Organization"
+- **🏷️ Environment-Specific Tagging**: All tags include environment suffix
+- **🔐 Security Integration**: HashiCorp Vault for certificate management
+- **🧪 Comprehensive Testing**: Smoke tests + Load tests + Health checks
+- **🐘 Database Testing**: PostgreSQL integration with migrations
+- **⚙️ Configuration Management**: Kong Deck for declarative config
+- **📊 Detailed Reporting**: Build summaries and test reports
 
-# Download and install Kong binary
-COPY kong-enterprise-edition_3.10.0.1_amd64.deb /tmp/kong.deb
+### Build Steps Breakdown
 
-# Install Kong and dependencies
-RUN set -ex; \
-  apt-get update && \
-  apt-get install --yes /tmp/kong.deb && \
-  rm -rf /var/lib/apt/lists/* && \
-  rm -rf /tmp/kong.deb && \
-  \
-  # Security hardening
-  rm -rf /usr/share/doc/* && \
-  rm -rf /usr/share/man/* && \
-  \
-  # Set proper ownership
-  chown kong:0 /usr/local/bin/kong && \
-  chown -R kong:0 /usr/local/kong && \
-  \
-  # Create symlinks
-  ln -s /usr/local/openresty/luajit/bin/luajit /usr/local/bin/luajit && \
-  ln -s /usr/local/openresty/luajit/bin/luajit /usr/local/bin/lua && \
-  ln -s /usr/local/openresty/nginx/sbin/nginx /usr/local/bin/nginx && \
-  \
-  # Verify installation
-  kong version
-
-# Copy custom configurations
-COPY configs/kong.conf.template /etc/kong/kong.conf.template
-COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
-
-# Set proper permissions
-RUN chmod +x /docker-entrypoint.sh
-
-# Switch to non-root user
-USER kong
-
-# Expose standard Kong ports
-EXPOSE 8000 8443 8001 8444 8002 8445 8003 8446 8004 8447
-
-# Health check
-HEALTHCHECK --interval=10s --timeout=10s --retries=10 \
-  CMD kong health
-
-# Default command
-ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["kong", "docker-start"]
-```
-
-### 3. GitHub Actions Workflow
-
+#### 1. Setup & Preparation
 ```yaml
-name: Build Kong Golden Image
-
-on:
-  push:
-    branches: [main]
-  schedule:
-    # Weekly security updates
-    - cron: '0 2 * * 1'
-  workflow_dispatch:
-    inputs:
-      kong_version:
-        description: 'Kong version to build'
-        required: true
-        default: '3.10.0.1'
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Login to registry
-      uses: docker/login-action@v3
-      with:
-        registry: your-org-registry.com
-        username: ${{ secrets.REGISTRY_USERNAME }}
-        password: ${{ secrets.REGISTRY_PASSWORD }}
-        
-    - name: Download Kong binary
-      run: |
-        chmod +x scripts/download-kong.sh
-        ./scripts/download-kong.sh ${{ github.event.inputs.kong_version || '3.10.0.1' }}
-        
-    - name: Build image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: dockerfiles/Dockerfile.ubuntu
-        platforms: linux/amd64,linux/arm64
-        push: false
-        tags: |
-          your-org-registry.com/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-          your-org-registry.com/kong-gateway:latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        
-    - name: Run smoke tests
-      run: |
-        docker run --rm -d --name kong-test \
-          your-org-registry.com/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-        sleep 30
-        chmod +x scripts/kong-smoke-tests.bats
-        ./scripts/kong-smoke-tests.bats
-        docker stop kong-test
-        
-    - name: Run security scan
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: your-org-registry.com/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        
-    - name: Run load tests
-      run: |
-        docker run --rm -d --name kong-load-test \
-          -p 8000:8000 \
-          your-org-registry.com/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-        sleep 30
-        npx k6 run tests/load/k6/load.js
-        docker stop kong-load-test
-        
-    - name: Push image
-      if: success()
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: dockerfiles/Dockerfile.ubuntu
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: |
-          your-org-registry.com/kong-gateway:${{ github.event.inputs.kong_version || '3.10.0.1' }}
-          your-org-registry.com/kong-gateway:latest
+- Checkout source code
+- Setup Kong Deck CLI
+- Configure Docker Buildx
+- Setup testing tools (Bats, K6)
 ```
 
----
+#### 2. Security & Certificates
+```yaml
+- Import CA certificates from HashiCorp Vault
+- Save certificates to build context
+- Apply security configurations
+```
 
-## Testing & Quality Assurance
+#### 3. Kong Binary Management
+```yaml
+- Download Kong Enterprise Edition
+- Version: 3.10.0.2 (configurable)
+- Source: packages.konghq.com
+- Architecture: AMD64
+```
 
-### 1. Smoke Tests (BATS)
+#### 4. Image Building
+```yaml
+- Build from Debian base image
+- Install Kong binary
+- Apply custom configurations
+- Set proper permissions
+- Create non-root user
+```
+
+#### 5. Testing Infrastructure
+```yaml
+- Create isolated Docker network
+- Start PostgreSQL container
+- Wait for database readiness
+- Run Kong database migrations
+```
+
+#### 6. Kong Gateway Testing
+```yaml
+- Start Kong with PostgreSQL backend
+- Wait for Kong health checks
+- Apply configuration with Deck
+- Verify route availability
+```
+
+#### 7. Test Execution
+```yaml
+- Smoke Tests: Basic functionality validation
+- Load Tests: Performance testing with K6 (50 VUs, 10s)
+- Health Checks: All ports (8000, 8001, 8100, 8443, 8444)
+```
+
+#### 8. Publication & Reporting
+```yaml
+- Push multi-tagged image to registry
+- Generate inspection reports
+- Create detailed build summary
+- Upload test artifacts
+```
+
+## 🧪 Testing Strategy
+
+### Smoke Tests (BATS)
+Located in `scripts/kong-smoke-tests.bats`
 
 ```bash
-#!/usr/bin/env bats
-
-@test "Kong binary is installed and executable" {
-    run docker exec kong-test kong version
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Kong"* ]]
-}
-
-@test "Kong can start successfully" {
-    run docker exec kong-test kong health
-    [ "$status" -eq 0 ]
-}
-
-@test "Kong Admin API is responsive" {
-    run curl -f http://localhost:8001/status
-    [ "$status" -eq 0 ]
-}
-
-@test "Kong Proxy is responsive" {
-    run curl -f http://localhost:8000
-    [ "$status" -eq 0 ]
-}
-
-@test "Essential plugins are available" {
-    run docker exec kong-test kong config -c /etc/kong/kong.conf init
-    [ "$status" -eq 0 ]
-    
-    run curl -s http://localhost:8001/plugins/available
-    [[ "$output" == *"rate-limiting"* ]]
-    [[ "$output" == *"key-auth"* ]]
-    [[ "$output" == *"cors"* ]]
-}
+# Execute smoke tests
+bats scripts/kong-smoke-tests.bats
 ```
 
-### 2. Load Tests (K6)
+**Test Coverage:**
+- Kong binary installation
+- Service startup and health
+- Admin API responsiveness
+- Proxy functionality
+- Plugin availability
+- Database connectivity
 
-```javascript
-import http from 'k6/http';
-import { check, sleep } from 'k6';
-
-export let options = {
-  stages: [
-    { duration: '2m', target: 100 }, // Ramp up
-    { duration: '5m', target: 100 }, // Sustained load
-    { duration: '2m', target: 0 },   // Ramp down
-  ],
-  thresholds: {
-    http_req_duration: ['p(95)<1000'], // 95% of requests under 1s
-    http_req_failed: ['rate<0.01'],    // Error rate under 1%
-  },
-};
-
-export default function () {
-  // Test Kong Admin API
-  let adminResponse = http.get('http://localhost:8001/status');
-  check(adminResponse, {
-    'Admin API status is 200': (r) => r.status === 200,
-    'Admin API response time < 500ms': (r) => r.timings.duration < 500,
-  });
-
-  // Test Kong Proxy
-  let proxyResponse = http.get('http://localhost:8000');
-  check(proxyResponse, {
-    'Proxy status is 404 (no routes configured)': (r) => r.status === 404,
-    'Proxy response time < 200ms': (r) => r.timings.duration < 200,
-  });
-
-  sleep(1);
-}
-```
-
-### 3. Security Scanning
-
-```yaml
-# Security scan configuration
-security:
-  tools:
-    - trivy          # Vulnerability scanning
-    - hadolint       # Dockerfile linting
-    - dockle         # Container image linter
-    - grype          # Alternative vulnerability scanner
-    
-  policies:
-    max_critical: 0
-    max_high: 5
-    max_medium: 20
-    
-  exemptions:
-    - CVE-2024-12345  # False positive
-    - CVE-2024-67890  # Accepted risk with mitigation
-```
-
----
-
-## Best Practices & Governance
-
-### 1. Version Management
-
-#### Semantic Versioning Strategy
-```
-{KONG_VERSION}-{ORG_PATCH}.{BUILD_NUMBER}
-
-Examples:
-- 3.10.0.1-1.245   (Kong 3.10.0.1, org patch 1, build 245)
-- 3.10.0.1-2.250   (Kong 3.10.0.1, org patch 2, build 250)
-```
-
-#### Tagging Strategy
-- **Latest**: `kong-gateway:latest`
-- **Version**: `kong-gateway:3.10.0.1-1.245`
-- **Major.Minor**: `kong-gateway:3.10-latest`
-- **Environment**: `kong-gateway:3.10.0.1-1.245-prod`
-
-### 2. Security Hardening
+### Load Tests (K6)
+Located in `tests/k6/load.js`
 
 ```bash
-#!/bin/bash
-# security-hardening.sh
-
-# Remove unnecessary packages
-apt-get remove --purge -y \
-  curl \
-  wget \
-  nano \
-  vim \
-  ssh \
-  telnet
-
-# Remove package manager caches
-rm -rf /var/lib/apt/lists/*
-rm -rf /var/cache/apt/*
-
-# Remove documentation and man pages
-rm -rf /usr/share/doc/*
-rm -rf /usr/share/man/*
-rm -rf /usr/share/info/*
-
-# Set proper file permissions
-chmod 755 /usr/local/bin/kong
-chmod -R 755 /usr/local/kong
-
-# Remove SUID bits
-find / -perm -4000 -exec chmod u-s {} \; 2>/dev/null || true
-find / -perm -2000 -exec chmod g-s {} \; 2>/dev/null || true
-
-# Create non-root user if not exists
-groupadd -r kong || true
-useradd -r -g kong -s /bin/false kong || true
+# Execute load tests
+k6 run tests/k6/load.js
 ```
 
-### 3. Configuration Management
+**Test Parameters:**
+- Virtual Users: 50
+- Duration: 10 seconds
+- Endpoints: Admin API, Proxy API
+- Thresholds: Response time and error rates
 
+### Health Checks
+- **Kong Health**: `kong health` command
+- **Database**: PostgreSQL connectivity
+- **Services**: All Kong ports accessible
+- **Configuration**: Deck sync validation
+
+## 🔐 Security Features
+
+### Security Hardening
+- Non-root user execution
+- Minimal package installation
+- Security patches applied
+- Vulnerability scanning ready
+
+### Certificate Management
+- HashiCorp Vault integration
+- CA certificate injection
+- Secure certificate storage
+
+### Access Control
+- Private registry authentication
+- Secrets management
+- Environment separation
+
+## 📊 Build Outputs
+
+### Generated Artifacts
+```
+reports/
+├── smoke_test_report.log         # BATS test results
+├── load_test_report.json         # K6 performance results
+└── security_scan_report.json     # Vulnerability scan results
+```
+
+### Build Summary Example
+```
+✅ Kong Golden Image Build Complete!
+===========================================
+
+📦 Build Details:
+Kong Version: 3.10.0.2
+Base Semantic Version: 3.10.0.2-1.1
+Environment-Specific Semantic Version: 3.10.0.2-1.1-dev
+Environment: dev
+Registry: localhost:5000
+
+🏷️ Tags Created:
+  ✓ localhost:5000/kong-gateway:3.10.0.2-1.1-dev
+  ✓ localhost:5000/kong-gateway:3.10.0.2-dev
+  ✓ localhost:5000/kong-gateway:3.10-latest-dev
+
+🧪 Tests Completed:
+  ✓ Health checks for all ports (8000, 8001, 8100, 8443)
+  ✓ Admin API integration tests
+  ✓ Database connectivity tests
+  ✓ Smoke tests with BATS
+  ✓ Load tests with k6 (Proxy)
+
+🚀 Usage:
+docker pull localhost:5000/kong-gateway:3.10.0.2-1.1-dev
+```
+
+## 🔄 Maintenance & Updates
+
+### Regular Updates
+- **Weekly**: Security patch scans
+- **Monthly**: Kong version updates
+- **Quarterly**: Base image updates
+
+### Version Management
 ```bash
-# Environment-specific configuration injection
-envsubst < /etc/kong/kong.conf.template > /etc/kong/kong.conf
+# Semantic Version Format
+{KONG_VERSION}-{ORG_PATCH}.{BUILD_NUMBER}-{ENVIRONMENT}
 
-# Dynamic plugin loading
-KONG_PLUGINS="${KONG_PLUGINS:-bundled,custom-plugin}"
-
-# Secrets management
-KONG_DATABASE_PASSWORD="${DATABASE_PASSWORD:-$(cat /run/secrets/db_password)}"
+# Example: 3.10.0.2-1.245-prod
+# Kong: 3.10.0.2
+# Org Patch: 1
+# Build: 245
+# Environment: prod
 ```
 
-### 4. Monitoring & Observability
+### Upgrade Process
+1. Update `kong_version` input parameter
+2. Test in dev environment first
+3. Promote through staging
+4. Deploy to production
 
-```yaml
-# Built-in monitoring capabilities
-monitoring:
-  healthcheck:
-    endpoint: /status
-    interval: 30s
-    timeout: 5s
-    
-  metrics:
-    prometheus: enabled
-    statsd: enabled
-    
-  logging:
-    level: info
-    format: json
-    outputs:
-      - stdout
-      - /var/log/kong/kong.log
+## 🚦 Monitoring & Alerts
+
+### Build Monitoring
+- Pipeline success/failure rates
+- Build duration tracking
+- Test execution metrics
+- Image size monitoring
+
+### Deployment Tracking
+- Environment-specific deployments
+- Version adoption rates
+- Rollback frequency
+
+## 🤝 Contributing
+
+### Development Workflow
+1. Create feature branch
+2. Update Dockerfile/scripts
+3. Test locally with `act`
+4. Submit pull request
+5. Automated testing runs
+6. Review and merge
+
+### Local Testing with Act
+```bash
+# Install act (GitHub Actions runner)
+brew install act
+
+# Run workflow locally
+act workflow_dispatch \
+  --secret-file act.secrets \
+  --var kong_version=3.10.0.2 \
+  --var environment=dev
 ```
 
-### 5. Multi-Architecture Support
+## 📚 Documentation
 
-```yaml
-# Build for multiple architectures
-platforms:
-  - linux/amd64
-  - linux/arm64
-  
-# Architecture-specific optimizations
-buildargs:
-  - ARCH=${TARGETARCH}
-  - VARIANT=${TARGETVARIANT}
-```
+### Related Resources
+- [Kong Gateway Documentation](https://docs.konghq.com/gateway/)
+- [Kong Docker Installation](https://docs.konghq.com/gateway/latest/install/docker/)
+- [Kong Configuration Reference](https://docs.konghq.com/gateway/latest/reference/configuration/)
+- [Deck Documentation](https://docs.konghq.com/deck/)
 
----
-
-## Implementation Workflow
-
-### Phase 1: Foundation (Week 1-2)
-1. **Repository Setup**
-   - Create golden image repository
-   - Set up GitHub Actions workflow
-   - Configure container registry access
-
-2. **Basic Pipeline**
-   - Implement Dockerfile for primary base image
-   - Create download script for Kong binaries
-   - Set up basic smoke tests
-
-### Phase 2: Testing & Security (Week 3-4)
-1. **Enhanced Testing**
-   - Implement comprehensive smoke tests
-   - Add load testing with K6
-   - Create security scanning pipeline
-
-2. **Hardening**
-   - Apply security hardening scripts
-   - Implement vulnerability scanning
-   - Add compliance checking
-
-### Phase 3: Production Readiness (Week 5-6)
-1. **Multi-Architecture**
-   - Add ARM64 support
-   - Optimize build times with caching
-   - Implement parallel builds
-
-2. **Governance**
-   - Create approval workflows
-   - Add automated notifications
-   - Implement change tracking
-
-### Phase 4: Advanced Features (Week 7-8)
-1. **Automation**
-   - Automated Kong version detection
-   - Scheduled security updates
-   - Integration with change management
-
-2. **Monitoring**
-   - Build success/failure tracking
-   - Performance metrics collection
-   - Usage analytics
+### Support
+For questions or issues:
+1. Check existing [GitHub Issues](https://github.com/your-org/kong-golden-image/issues)
+2. Create new issue with detailed description
+3. Contact DevOps team: devops@your-org.com
 
 ---
 
-## Key Takeaways
+## 📈 Benefits Summary
 
-### Benefits of Golden Images
-✅ **Security**: Controlled, scanned, and approved base images  
-✅ **Compliance**: Meet organizational and regulatory requirements  
-✅ **Consistency**: Identical runtime environments across all stages  
-✅ **Governance**: Centralized control over production deployments  
-✅ **Support**: Better troubleshooting with known configurations  
+✅ **Environment Isolation**: Clear separation with environment-specific tags  
+✅ **Automated Testing**: Comprehensive validation before deployment  
+✅ **Security First**: Integrated security scanning and hardening  
+✅ **Database Ready**: Pre-tested PostgreSQL integration  
+✅ **Production Ready**: Battle-tested build process  
+✅ **Audit Trail**: Complete build and test reporting  
 
-### Implementation Success Factors
-🎯 **Start Simple**: Begin with basic functionality, iterate  
-🎯 **Automate Everything**: Reduce manual intervention and errors  
-🎯 **Test Thoroughly**: Comprehensive validation before production  
-🎯 **Document Well**: Clear processes for maintenance and updates  
-🎯 **Monitor Continuously**: Track performance and security metrics  
-
-### Next Steps
-1. **Pilot Project**: Start with non-production environments
-2. **Team Training**: Ensure teams understand the new process
-3. **Gradual Rollout**: Phase migration from existing images
-4. **Continuous Improvement**: Regular review and optimization
-
----
-
-## Questions & Discussion
-
-### Common Questions
-
-**Q: How often should we rebuild golden images?**  
-A: At minimum for security patches, ideally monthly, or when new Kong versions are released.
-
-**Q: Can we include custom plugins in golden images?**  
-A: Yes, custom plugins can be pre-installed, but consider the trade-off between image size and deployment flexibility.
-
-**Q: How do we handle Kong Enterprise licenses in images?**  
-A: Never embed licenses in images. Use environment variables or mounted secrets at runtime.
-
-**Q: What's the impact on deployment speed?**  
-A: Initial build time increases, but deployment speed improves due to pre-built, cached images.
-
----
-
-## Resources & Links
-
-### Documentation
-- [Kong Gateway Installation Guide](https://docs.konghq.com/gateway/latest/install/)
-- [Building Custom Docker Images](https://docs.konghq.com/gateway/latest/install/docker/build-custom-images/)
-- [Kong Support Policy](https://docs.konghq.com/gateway/latest/support-policy/)
-
-### Tools & Repositories
-- [Kong Cloudsmith Packages](https://packages.konghq.com/)
-- [Docker Official Images](https://github.com/docker-library/official-images)
-- [Container Security Best Practices](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html)
-
-### Community
-- [Kong Community Forum](https://discuss.konghq.com/)
-- [Kong GitHub Discussions](https://github.com/Kong/kong/discussions)
-- [Kong Academy](https://education.konghq.com/)
-
----
-
-**Thank you for attending the Kong Gateway Golden Images Workshop!**
-
-*For questions or support, contact: [your-email@organization.com]*
+**Next Steps**: Clone this repository and run your first golden image build! 🚀
