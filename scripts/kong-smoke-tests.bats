@@ -3,9 +3,11 @@
 # Variables
 KONG_HOST=${KONG_HOST:-"localhost"}
 KONG_PROXY="http://$KONG_HOST:8000"
+KONG_ADMIN="http://$KONG_HOST:8001"
 KONG_STATUS="http://$KONG_HOST:8100"
 TEST_ROUTE_PATH="/test"
 TEST_AUTH_PATH="/auth"
+TEST_SERVICE_NAME="test-service-$(date +%s)"
 
 # Function to perform a curl request and return the response code
 get_response_code() {
@@ -17,7 +19,7 @@ get_response_code() {
         skip "nc (netcat) is not installed. Skipping port check."
     fi
 
-    for port in 8000 8100 8443; do
+    for port in 8000 8001 8100 8443; do
         nc -zv "$KONG_HOST" "$port" &> /dev/null
         if [ $? -eq 0 ]; then
             echo "Port $port is open and listening."

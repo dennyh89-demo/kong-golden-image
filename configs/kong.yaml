@@ -19,10 +19,15 @@ services:
         paths:
           - /test
         plugins:
-          - name: rate-limiting
+          - name: rate-limiting-advanced
             config:
-              minute: 10
-              policy: local
+              namespace: service-route
+              limit:
+                - 10
+              window_size:
+                - 60
+              strategy: cluster
+              sync_rate: 0
       - name: auth-route
         paths:
           - /auth
