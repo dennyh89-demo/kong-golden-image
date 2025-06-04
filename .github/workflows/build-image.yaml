@@ -58,14 +58,17 @@ jobs:
         # Base semantic version: {KONG_VERSION}-{ORG_PATCH}.{BUILD_NUMBER}
         SEMANTIC_VERSION="${KONG_VERSION}-${ORG_PATCH_VERSION}.${BUILD_NUMBER}"
         
+        # Semantic version with environment suffix: {KONG_VERSION}-{ORG_PATCH}.{BUILD_NUMBER}-{ENV}
+        SEMANTIC_VERSION_WITH_ENV="${SEMANTIC_VERSION}-${ENVIRONMENT}"
+        
         # Extract major.minor version from Kong version (e.g., 3.10.0.2 -> 3.10)
         KONG_MAJOR_MINOR=$(echo "$KONG_VERSION" | cut -d. -f1-2)
         
         # Generate all tags
         TAGS=""
         
-        # 1. Semantic versioning tag
-        TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${SEMANTIC_VERSION},"
+        # 1. Semantic versioning tag with environment suffix
+        TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${SEMANTIC_VERSION_WITH_ENV},"
         
         # 2. Kong version tag (without org patch/build)
         TAGS="${TAGS}${DOCKER_REGISTRY}/kong-gateway:${KONG_VERSION},"
@@ -82,12 +85,14 @@ jobs:
         TAGS=$(echo "$TAGS" | sed 's/,$//')
         
         echo "semantic_version=${SEMANTIC_VERSION}" >> $GITHUB_OUTPUT
+        echo "semantic_version_with_env=${SEMANTIC_VERSION_WITH_ENV}" >> $GITHUB_OUTPUT
         echo "kong_major_minor=${KONG_MAJOR_MINOR}" >> $GITHUB_OUTPUT
         echo "tags=${TAGS}" >> $GITHUB_OUTPUT
         
         # Display tagging strategy
         echo "🏷️ Tagging Strategy Applied:"
-        echo "Semantic Version: ${SEMANTIC_VERSION}"
+        echo "Base Semantic Version: ${SEMANTIC_VERSION}"
+        echo "Environment-Specific Semantic Version: ${SEMANTIC_VERSION_WITH_ENV}"
         echo "Kong Major.Minor: ${KONG_MAJOR_MINOR}"
         echo "Generated Tags:"
         echo "$TAGS" | tr ',' '\n' | sed 's/^/  - /'
@@ -208,7 +213,7 @@ jobs:
         --env KONG_PG_PASSWORD=kongpass \
         --env KONG_PLUGINS=bundled,myplugin \
         --env KONG_PG_DATABASE=kong \
-        ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }} \
+        ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version_with_env }} \
         kong migrations bootstrap
         echo "✅ Kong migrations completed!"
 
@@ -233,7 +238,7 @@ jobs:
           --health-interval 10s \
           --health-timeout 5s \
           --health-retries 5 \
-          ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }}
+          ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version_with_env }}
 
     - name: Wait for Kong Gateway to start
       run: |
@@ -305,12 +310,12 @@ jobs:
     - name: Inspect
       run: |
         echo "🔍 Inspecting pushed images..."
-        echo "Primary semantic tag: ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }}"
-        echo "Environment-specific tag: ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }}-${{ inputs.environment }}"
+        echo "Environment-specific semantic tag: ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version_with_env }}"
+        echo "Base semantic tag: ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }}"
         echo ""
         
-        # Inspect the primary semantic version tag
-        docker buildx imagetools inspect ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }}
+        # Inspect the environment-specific semantic version tag
+        docker buildx imagetools inspect ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version_with_env }}
 
     - name: Build Summary
       if: success()
@@ -320,7 +325,8 @@ jobs:
         echo ""
         echo "📦 **Build Details:**"
         echo "Kong Version: ${{ inputs.kong_version }}"
-        echo "Semantic Version: ${{ steps.tags.outputs.semantic_version }}"
+        echo "Base Semantic Version: ${{ steps.tags.outputs.semantic_version }}"
+        echo "Environment-Specific Semantic Version: ${{ steps.tags.outputs.semantic_version_with_env }}"
         echo "Environment: ${{ inputs.environment }}"
         echo "Registry: ${{ inputs.docker_registry }}"
         echo ""
@@ -352,7 +358,7 @@ jobs:
         echo "  ✓ Load tests with k6 (Proxy)"
         echo ""
         echo "🚀 **Usage:**"
-        echo "docker pull ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }}"
+        echo "docker pull ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version_with_env }}"
         echo ""
         echo "🔗 **Admin API:** http://localhost:8001"
         echo "🔗 **Proxy API:** http://localhost:8000"
