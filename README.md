@@ -1,6 +1,5 @@
 # Kong Gateway Golden Image Build Pipeline
-
-[![Build Status](https://github.com/your-org/kong-golden-image/workflows/Build%20Kong%20Golden%20Image/badge.svg)](https://github.com/your-org/kong-golden-image/actions)
+# =========================================================
 
 ## Overview
 
