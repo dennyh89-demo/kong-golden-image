@@ -56,7 +56,7 @@ COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
 COPY certificates/rootCA.crt /etc/ssl/certs/rootCA.crt
 
 # Include custom plugins
-# COPY kong-plugin/kong/plugins/ /usr/local/share/lua/5.1/kong/plugins/
+COPY kong-plugin/kong/plugins/ /usr/local/share/lua/5.1/kong/plugins/
 
 # Set proper permissions
 RUN chmod +x /docker-entrypoint.sh

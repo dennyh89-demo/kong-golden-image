@@ -116,6 +116,10 @@ jobs:
       run: |
         echo "${{ steps.import-secrets.outputs.CA_CERT }}" > certificates/rootCA.crt
       shell: bash
+
+    - name: Fetch Custom Plugin
+      run: |
+        git clone https://github.com/Kong/kong-plugin.git
       
     - name: Login to registry
       uses: docker/login-action@v3
@@ -202,6 +206,7 @@ jobs:
         --env KONG_PG_PORT=5432 \
         --env KONG_PG_USER=kong \
         --env KONG_PG_PASSWORD=kongpass \
+        --env KONG_PLUGINS=bundled,myplugin \
         --env KONG_PG_DATABASE=kong \
         ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }} \
         kong migrations bootstrap
@@ -222,7 +227,7 @@ jobs:
           --env KONG_PG_DATABASE=kong \
           --env KONG_ADMIN_LISTEN="0.0.0.0:8001" \
           --env KONG_STATUS_LISTEN=0.0.0.0:8100 \
-          --env KONG_PLUGINS=bundled \
+          --env KONG_PLUGINS=bundled,myplugin \
           --env KONG_NGINX_WORKER_PROCESSES=1 \
           --health-cmd "kong health" \
           --health-interval 10s \
@@ -331,8 +336,6 @@ jobs:
           echo "  ✓ SSL/TLS hardening applied"
         else
           echo "  ✓ Development/staging configuration"
-          echo "  ✓ Debug headers enabled"
-          echo "  ✓ Basic security settings"
         fi
         echo ""
         echo "🗄️ **Database Integration:**"
@@ -346,7 +349,7 @@ jobs:
         echo "  ✓ Admin API integration tests"
         echo "  ✓ Database connectivity tests"
         echo "  ✓ Smoke tests with BATS"
-        echo "  ✓ Load tests with k6 (Proxy + Admin API)"
+        echo "  ✓ Load tests with k6 (Proxy)"
         echo ""
         echo "🚀 **Usage:**"
         echo "docker pull ${{ inputs.docker_registry }}/kong-gateway:${{ steps.tags.outputs.semantic_version }}"

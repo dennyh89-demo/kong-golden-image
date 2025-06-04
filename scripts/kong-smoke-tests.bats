@@ -75,3 +75,18 @@ get_response_code() {
     error_response_code=$(get_response_code "$KONG_PROXY/invalid-route")
     [ "$error_response_code" -eq 404 ]
 }
+
+@test "Custom plugins are available" {
+    # Define the plugins to check (space-separated)
+    REQUIRED_PLUGINS=${REQUIRED_PLUGINS:-"myplugin"}
+    
+    output=$(curl -s "$KONG_ADMIN")
+    available_plugins=$(echo "$output" | jq -r '.plugins.available_on_server | keys[]')
+    
+    for plugin in $REQUIRED_PLUGINS; do
+        if ! echo "$available_plugins" | grep -q "^$plugin$"; then
+            echo "Required plugin '$plugin' is not available"
+            false
+        fi
+    done
+}
