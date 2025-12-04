@@ -124,7 +124,7 @@ jobs:
       
     - name: Save CA Certificate to file
       run: |
-        echo "${{ CA_CERT }}" > certificates/rootCA.crt
+        echo "${ CA_CERT }" > certificates/rootCA.crt
       shell: bash
 
     - name: Fetch Custom Plugin
