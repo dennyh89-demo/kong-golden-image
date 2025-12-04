@@ -119,7 +119,7 @@ jobs:
     - name: read CA Certificate from file
       id: import-secrets
       run: |
-        export CA_CERT=$(cat certificates/rootCA.pem)
+        export CA_CERT=$( cat certificates/rootCA.pem )
       shell: bash
       
     - name: Save CA Certificate to file
