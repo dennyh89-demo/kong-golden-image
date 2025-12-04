@@ -120,7 +120,7 @@ jobs:
       
     - name: Save CA Certificate to file
       run: |
-        cp certificates/rootCA.pem > certificates/rootCA.crt
+        cp certificates/rootCA.pem certificates/rootCA.crt
       shell: bash
 
     - name: Fetch Custom Plugin
