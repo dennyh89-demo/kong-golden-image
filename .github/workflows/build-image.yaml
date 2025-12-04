@@ -36,11 +36,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 5000:5000
+
     env:
       DOCKERFILE_DIR: ${{ github.workspace }}/dockerfiles
       KONG_VERSION: ${{ inputs.kong_version }}
