@@ -36,7 +36,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      packages: write
     env:
       DOCKERFILE_DIR: ${{ github.workspace }}/dockerfiles
       KONG_VERSION: ${{ inputs.kong_version }}
