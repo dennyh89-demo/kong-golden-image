@@ -152,7 +152,7 @@ jobs:
         context: .
         file: dockerfiles/Dockerfile.debian
         platforms: linux/amd64
-        push: false
+        push: true
         load: true
         tags: ${{ steps.tags.outputs.tags }}
         build-args: |
