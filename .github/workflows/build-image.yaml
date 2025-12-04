@@ -108,18 +108,23 @@ jobs:
       id: setup-bats
       uses: bats-core/bats-action@3.0.0
 
-    - name: Import CA Certificate
+#    - name: Import CA Certificate
+#      id: import-secrets
+#      uses: hashicorp/vault-action@v2
+#      with:
+#        url: ${{ env.VAULT_ADDR }}
+#        token: ${{ secrets.VAULT_TOKEN }}
+#        secrets: |
+#          pki/cert/ca certificate | CA_CERT ;
+    - name: read CA Certificate from file
       id: import-secrets
-      uses: hashicorp/vault-action@v2
-      with:
-        url: ${{ env.VAULT_ADDR }}
-        token: ${{ secrets.VAULT_TOKEN }}
-        secrets: |
-          pki/cert/ca certificate | CA_CERT ;
-
+      run: |
+        export CA_CERT=$(cat certificates/rootCA.pem)
+      shell: bash
+      
     - name: Save CA Certificate to file
       run: |
-        echo "${{ steps.import-secrets.outputs.CA_CERT }}" > certificates/rootCA.crt
+        echo "${{ CA_CERT }}" > certificates/rootCA.crt
       shell: bash
 
     - name: Fetch Custom Plugin
